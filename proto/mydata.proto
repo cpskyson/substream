@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package mydata.v1;
+
+message Pool {
+  string pool_id = 1;
+  string token_a_mint = 2;
+  string token_b_mint = 3;
+  uint32 fee_tier_bps = 4;
+  double volume_24h = 5;
+  double fees_24h = 6;
+  double apr_24h = 7;
+  double tvl_estimate = 8;
+  double token_a_balance = 9;
+  double token_b_balance = 10;
+  string token_a_symbol = 11;
+  string token_b_symbol = 12;
+  uint32 token_a_decimals = 13;
+  uint32 token_b_decimals = 14;
+  double tvl_usd = 15;
+  double token_a_price_usd = 16;
+  double token_b_price_usd = 17;
+  double volume_24h_usd = 18;
+  double fees_24h_usd = 19;
+  double apr_24h_usd = 20;
+  double volume_a_delta = 21;
+  double volume_b_delta = 22;
+  double fees_a_delta = 23;
+  double fees_b_delta = 24;
+  double lp_supply = 25;
+}
+
+message Position {
+  string position_id = 1;
+  string pool_id = 2;
+  string token_a_mint = 3;
+  string token_b_mint = 4;
+  uint32 fee_tier_bps = 5;
+  double pool_value = 6;
+  string token_a_symbol = 7;
+  string token_b_symbol = 8;
+  uint32 token_a_decimals = 9;
+  uint32 token_b_decimals = 10;
+  double token_a_balance = 11;
+  double token_b_balance = 12;
+  double pending_rewards = 13;
+  string owner = 14;
+  double lp_balance = 15;
+}
+
+message PoolHour {
+  string pool_id = 1;
+  int64 hour = 2;
+  double volume_a = 3;
+  double volume_b = 4;
+  double fees_a = 5;
+  double fees_b = 6;
+}
+
+message MyData {
+  uint64 slot = 1;
+  int64 timestamp = 2;
+  repeated Pool pools = 3;
+  repeated Position positions = 4;
+}
+
+message HourlyData {
+  uint64 slot = 1;
+  int64 timestamp = 2;
+  repeated PoolHour pool_hours = 3;
+}
