@@ -74,6 +74,7 @@ struct PoolAccumulator {
     tvl_estimate: f64,
     token_a_balance: f64,
     token_b_balance: f64,
+    has_balance_snapshot: bool,
     lp_mint: String,
     lp_supply: f64,
 }
@@ -290,22 +291,22 @@ fn map_amm_updates(
 
     for position in position_updates.values_mut() {
         if let Some(pool) = pool_updates.get(&position.pool_id) {
-            if position.token_a_mint.is_empty() {
+            if !pool.token_a_mint.is_empty() {
                 position.token_a_mint = pool.token_a_mint.clone();
             }
-            if position.token_b_mint.is_empty() {
+            if !pool.token_b_mint.is_empty() {
                 position.token_b_mint = pool.token_b_mint.clone();
             }
-            if position.token_a_symbol.is_empty() && !pool.token_a_symbol.is_empty() {
+            if !pool.token_a_symbol.is_empty() {
                 position.token_a_symbol = pool.token_a_symbol.clone();
             }
-            if position.token_b_symbol.is_empty() && !pool.token_b_symbol.is_empty() {
+            if !pool.token_b_symbol.is_empty() {
                 position.token_b_symbol = pool.token_b_symbol.clone();
             }
-            if position.token_a_decimals == 0 && pool.token_a_decimals > 0 {
+            if pool.token_a_decimals > 0 {
                 position.token_a_decimals = pool.token_a_decimals;
             }
-            if position.token_b_decimals == 0 && pool.token_b_decimals > 0 {
+            if pool.token_b_decimals > 0 {
                 position.token_b_decimals = pool.token_b_decimals;
             }
             if position.fee_tier_bps == 0 {
@@ -332,6 +333,15 @@ fn map_amm_updates(
 
     let mut pools: Vec<mydata::Pool> = pool_updates
         .into_values()
+        .filter(|value| {
+            value.has_balance_snapshot
+                || value.volume_delta > 0.0
+                || value.fee_delta > 0.0
+                || value.volume_a_delta > 0.0
+                || value.volume_b_delta > 0.0
+                || value.fee_a_delta > 0.0
+                || value.fee_b_delta > 0.0
+        })
         .map(|value| mydata::Pool {
             pool_id: value.pool_id,
             token_a_mint: value.token_a_mint,
@@ -1014,23 +1024,63 @@ fn map_amm_priced(
         let mut pool = pool_metadata
             .get_last(key)
             .unwrap_or_else(|| update.clone());
+        let mut normalized_update = update.clone();
 
-        pool.volume_24h = update.volume_24h;
-        pool.fees_24h = update.fees_24h;
-        pool.apr_24h = update.apr_24h;
-        pool.volume_a_delta = update.volume_a_delta;
-        pool.volume_b_delta = update.volume_b_delta;
-        pool.fees_a_delta = update.fees_a_delta;
-        pool.fees_b_delta = update.fees_b_delta;
-        // Use this block's pool state from map_amm_updates (Swap updates balances here)
-        if update.token_a_balance > 0.0 {
-            pool.token_a_balance = update.token_a_balance;
+        // Some instructions expose token accounts in reversed order compared with
+        // event reserves. If this block update order is reversed from stored pool
+        // order, normalize so balances land on the correct mint side.
+        if !pool.token_a_mint.is_empty()
+            && !pool.token_b_mint.is_empty()
+            && !normalized_update.token_a_mint.is_empty()
+            && !normalized_update.token_b_mint.is_empty()
+            && normalized_update.token_a_mint == pool.token_b_mint
+            && normalized_update.token_b_mint == pool.token_a_mint
+        {
+            std::mem::swap(
+                &mut normalized_update.token_a_mint,
+                &mut normalized_update.token_b_mint,
+            );
+            std::mem::swap(
+                &mut normalized_update.token_a_symbol,
+                &mut normalized_update.token_b_symbol,
+            );
+            std::mem::swap(
+                &mut normalized_update.token_a_decimals,
+                &mut normalized_update.token_b_decimals,
+            );
+            std::mem::swap(
+                &mut normalized_update.token_a_balance,
+                &mut normalized_update.token_b_balance,
+            );
+            std::mem::swap(
+                &mut normalized_update.volume_a_delta,
+                &mut normalized_update.volume_b_delta,
+            );
+            std::mem::swap(
+                &mut normalized_update.fees_a_delta,
+                &mut normalized_update.fees_b_delta,
+            );
         }
-        if update.token_b_balance > 0.0 {
-            pool.token_b_balance = update.token_b_balance;
+
+        pool.volume_24h = normalized_update.volume_24h;
+        pool.fees_24h = normalized_update.fees_24h;
+        pool.apr_24h = normalized_update.apr_24h;
+        pool.volume_a_delta = normalized_update.volume_a_delta;
+        pool.volume_b_delta = normalized_update.volume_b_delta;
+        pool.fees_a_delta = normalized_update.fees_a_delta;
+        pool.fees_b_delta = normalized_update.fees_b_delta;
+        // Use this block's pool state from map_amm_updates.
+        // Accepting zero is required for full-withdraw and empty-pool states.
+        if normalized_update.token_a_balance.is_finite() && normalized_update.token_a_balance >= 0.0
+        {
+            pool.token_a_balance = normalized_update.token_a_balance;
         }
-        if update.tvl_estimate > 0.0 {
-            pool.tvl_estimate = update.tvl_estimate;
+        if normalized_update.token_b_balance.is_finite() && normalized_update.token_b_balance >= 0.0
+        {
+            pool.token_b_balance = normalized_update.token_b_balance;
+        }
+        if normalized_update.tvl_estimate.is_finite() && normalized_update.tvl_estimate >= 0.0 {
+            pool.tvl_estimate = normalized_update.tvl_estimate;
         }
 
         if !pool.token_a_mint.is_empty() {
@@ -1205,10 +1255,10 @@ fn enrich_position_with_pool(
     pool: &mydata::Pool,
     token_symbols: &StoreGetString,
 ) {
-    if position.token_a_mint.is_empty() && !pool.token_a_mint.is_empty() {
+    if !pool.token_a_mint.is_empty() {
         position.token_a_mint = pool.token_a_mint.clone();
     }
-    if position.token_b_mint.is_empty() && !pool.token_b_mint.is_empty() {
+    if !pool.token_b_mint.is_empty() {
         position.token_b_mint = pool.token_b_mint.clone();
     }
     if position.fee_tier_bps == 0 && pool.fee_tier_bps > 0 {
@@ -1234,6 +1284,8 @@ fn enrich_position_with_pool(
         } else if pool.token_a_decimals > 0 {
             position.token_a_decimals = pool.token_a_decimals;
         }
+    } else if pool.token_a_decimals > 0 {
+        position.token_a_decimals = pool.token_a_decimals;
     }
     if position.token_b_decimals == 0 {
         if let Some(decimals) = decimals_for_mint(&position.token_b_mint) {
@@ -1241,6 +1293,8 @@ fn enrich_position_with_pool(
         } else if pool.token_b_decimals > 0 {
             position.token_b_decimals = pool.token_b_decimals;
         }
+    } else if pool.token_b_decimals > 0 {
+        position.token_b_decimals = pool.token_b_decimals;
     }
 }
 
@@ -1615,16 +1669,20 @@ fn upsert_pool_metadata(
 }
 
 fn set_pool_balances(entry: &mut PoolAccumulator, balance_a: f64, balance_b: f64) {
-    if balance_a > 0.0 {
-        entry.token_a_balance = balance_a;
-    }
-    if balance_b > 0.0 {
-        entry.token_b_balance = balance_b;
-    }
-    let pool_value = entry.token_a_balance + entry.token_b_balance;
-    if pool_value > 0.0 {
-        entry.tvl_estimate = pool_value;
-    }
+    let safe_balance_a = if balance_a.is_finite() && balance_a >= 0.0 {
+        balance_a
+    } else {
+        0.0
+    };
+    let safe_balance_b = if balance_b.is_finite() && balance_b >= 0.0 {
+        balance_b
+    } else {
+        0.0
+    };
+    entry.token_a_balance = safe_balance_a;
+    entry.token_b_balance = safe_balance_b;
+    entry.tvl_estimate = safe_balance_a + safe_balance_b;
+    entry.has_balance_snapshot = true;
 }
 
 fn update_position_lp_balance(
@@ -1734,6 +1792,16 @@ fn apply_amm_event(
             let entry = pool_updates.entry(value.pool_id).or_default();
             let balance_a = to_ui_amount(value.reserve_0_after, value.token_0_decimals);
             let balance_b = to_ui_amount(value.reserve_1_after, value.token_1_decimals);
+            if !value.token_0_mint.is_empty() {
+                entry.token_a_mint = value.token_0_mint.clone();
+                entry.token_a_symbol =
+                    update_symbol_if_needed(&value.token_0_mint, &entry.token_a_symbol, token_symbols);
+            }
+            if !value.token_1_mint.is_empty() {
+                entry.token_b_mint = value.token_1_mint.clone();
+                entry.token_b_symbol =
+                    update_symbol_if_needed(&value.token_1_mint, &entry.token_b_symbol, token_symbols);
+            }
             entry.token_a_decimals = value.token_0_decimals as u32;
             entry.token_b_decimals = value.token_1_decimals as u32;
             if entry.lp_mint.is_empty() && !value.lp_mint.is_empty() {
@@ -1756,6 +1824,16 @@ fn apply_amm_event(
             let entry = pool_updates.entry(value.pool_id).or_default();
             let balance_a = to_ui_amount(value.reserve_0_after, token_0_decimals);
             let balance_b = to_ui_amount(value.reserve_1_after, token_1_decimals);
+            if !value.token_0_mint.is_empty() {
+                entry.token_a_mint = value.token_0_mint.clone();
+                entry.token_a_symbol =
+                    update_symbol_if_needed(&value.token_0_mint, &entry.token_a_symbol, token_symbols);
+            }
+            if !value.token_1_mint.is_empty() {
+                entry.token_b_mint = value.token_1_mint.clone();
+                entry.token_b_symbol =
+                    update_symbol_if_needed(&value.token_1_mint, &entry.token_b_symbol, token_symbols);
+            }
             if entry.token_a_decimals == 0 {
                 entry.token_a_decimals = token_0_decimals as u32;
             }
