@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "ingest": "node scripts/ingest.js",
-    "backfill:metadata": "node scripts/backfill_metadata.js"
+    "backfill:metadata": "node scripts/backfill_metadata.js",
+    "api": "node scripts/api.js"
   },
   "dependencies": {
     "pg": "^8.11.5"
