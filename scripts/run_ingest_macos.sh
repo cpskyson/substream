@@ -50,8 +50,9 @@ run_stream_with_retry() {
         2> >(tee "$err_file" >&2) | \
         DATABASE_URL="$DATABASE_URL" node scripts/ingest.js
     fi
-    local substreams_status=${PIPESTATUS[0]}
-    local ingest_status=${PIPESTATUS[1]}
+    local pipe_status=("${PIPESTATUS[@]}")
+    local substreams_status="${pipe_status[0]:-1}"
+    local ingest_status="${pipe_status[1]:-1}"
     set -e
 
     if [[ "$substreams_status" -eq 0 && "$ingest_status" -eq 0 ]]; then
@@ -117,8 +118,12 @@ while [[ $current -le $END_BLOCK ]]; do
 
   chunk_limit="$LIMIT_PROCESSED_BLOCKS"
   if [[ -z "$LIMIT_PROCESSED_BLOCKS" ]]; then
+    PREPARE=$((current - INITIAL_BLOCK))
+    if [[ "$PREPARE" -lt 0 ]]; then
+      PREPARE=0
+    fi
     RANGE=$((chunk_end - current + 1))
-    chunk_limit=$((RANGE + BACKFILL_PREPARE_WINDOW))
+    chunk_limit=$((2 * PREPARE + RANGE + BACKFILL_PREPARE_WINDOW))
   fi
 
   echo "Backfill map_amm_priced from $current to $chunk_end..."
@@ -133,7 +138,11 @@ done
 if [[ "${REALTIME:-1}" == "1" ]]; then
   REALTIME_START_BLOCK="${REALTIME_START_BLOCK:-$((END_BLOCK + 1))}"
   if [[ -z "${REALTIME_LIMIT_PROCESSED_BLOCKS:-}" ]]; then
-    REALTIME_LIMIT_PROCESSED_BLOCKS=$((CHUNK_SIZE + REALTIME_CATCHUP_HEADROOM))
+    PREPARE=$((REALTIME_START_BLOCK - INITIAL_BLOCK))
+    if [[ "$PREPARE" -lt 0 ]]; then
+      PREPARE=0
+    fi
+    REALTIME_LIMIT_PROCESSED_BLOCKS=$((2 * PREPARE + REALTIME_CATCHUP_HEADROOM))
   fi
   echo "Starting realtime sync from block $REALTIME_START_BLOCK (Ctrl+C to stop)..."
   run_stream_with_retry "map_amm_priced" "$REALTIME_START_BLOCK" "" "1" "$REALTIME_LIMIT_PROCESSED_BLOCKS" &

@@ -4,7 +4,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "ingest": "node scripts/ingest.js"
+    "ingest": "node scripts/ingest.js",
+    "backfill:metadata": "node scripts/backfill_metadata.js"
   },
   "dependencies": {
     "pg": "^8.11.5"
