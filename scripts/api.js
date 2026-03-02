@@ -85,7 +85,8 @@ async function handlePools24h(url, res) {
 
   try {
     const countResult = await db.query("select count(*)::bigint as total from pools_24h");
-    const total = Number(countResult.rows[0]?.total || 0);
+    const first = countResult.rows && countResult.rows[0] ? countResult.rows[0] : null;
+    const total = Number((first && first.total) || 0);
 
     let result;
     if (allRows) {
@@ -140,7 +141,8 @@ async function handlePositionsEnriched(url, res) {
       "select count(*)::bigint as total from positions_enriched where owner = $1",
       [owner]
     );
-    const total = Number(countResult.rows[0]?.total || 0);
+    const first = countResult.rows && countResult.rows[0] ? countResult.rows[0] : null;
+    const total = Number((first && first.total) || 0);
 
     let result;
     if (allRows) {
