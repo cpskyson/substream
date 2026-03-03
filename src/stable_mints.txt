@@ -1,0 +1,4 @@
+# One mint per line.
+# Lines starting with '#' are comments.
+# Add more stablecoin mints below as needed.
+J3Pb2JBXx6TP6BjiPLzGvPfRa9jdGFdLnNcemkGpL2vi

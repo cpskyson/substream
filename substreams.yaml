@@ -31,15 +31,15 @@ binaries:
 modules:
   - name: map_filtered_transactions
     use: solana:transactions_by_programid_and_account_without_votes
-    initialBlock: 429978940
+    initialBlock: 444697459
 
   - name: map_metadata_transactions
     use: solana:transactions_by_programid_and_account_without_votes
-    initialBlock: 429978940
+    initialBlock: 444697459
 
   - name: map_token_2022_transactions
     use: solana:transactions_by_programid_and_account_without_votes
-    initialBlock: 429978940
+    initialBlock: 444697459
 
   - name: map_amm_updates
     kind: map

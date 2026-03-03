@@ -50,9 +50,7 @@ const TOKEN_REGISTRY: &[TokenRegistryEntry] = &[TokenRegistryEntry {
     decimals: 9,
 }];
 
-const STABLE_ANCHOR_MINTS: [&str; 1] = [
-    "J3Pb2JBXx6TP6BjiPLzGvPfRa9jdGFdLnNcemkGpL2vi",
-];
+const STABLE_ANCHOR_MINTS_RAW: &str = include_str!("stable_mints.txt");
 const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 #[derive(Default, Clone)]
@@ -333,15 +331,6 @@ fn map_amm_updates(
 
     let mut pools: Vec<mydata::Pool> = pool_updates
         .into_values()
-        .filter(|value| {
-            value.has_balance_snapshot
-                || value.volume_delta > 0.0
-                || value.fee_delta > 0.0
-                || value.volume_a_delta > 0.0
-                || value.volume_b_delta > 0.0
-                || value.fee_a_delta > 0.0
-                || value.fee_b_delta > 0.0
-        })
         .map(|value| mydata::Pool {
             pool_id: value.pool_id,
             token_a_mint: value.token_a_mint,
@@ -921,7 +910,11 @@ fn update_weighted_price(
 }
 
 fn is_stable_mint(mint: &str) -> bool {
-    STABLE_ANCHOR_MINTS.iter().any(|value| *value == mint)
+    STABLE_ANCHOR_MINTS_RAW
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .any(|line| line == mint)
 }
 
 fn is_sol_mint(mint: &str) -> bool {
@@ -1069,18 +1062,33 @@ fn map_amm_priced(
         pool.volume_b_delta = normalized_update.volume_b_delta;
         pool.fees_a_delta = normalized_update.fees_a_delta;
         pool.fees_b_delta = normalized_update.fees_b_delta;
-        // Use this block's pool state from map_amm_updates.
-        // Accepting zero is required for full-withdraw and empty-pool states.
-        if normalized_update.token_a_balance.is_finite() && normalized_update.token_a_balance >= 0.0
-        {
-            pool.token_a_balance = normalized_update.token_a_balance;
-        }
-        if normalized_update.token_b_balance.is_finite() && normalized_update.token_b_balance >= 0.0
-        {
-            pool.token_b_balance = normalized_update.token_b_balance;
-        }
-        if normalized_update.tvl_estimate.is_finite() && normalized_update.tvl_estimate >= 0.0 {
-            pool.tvl_estimate = normalized_update.tvl_estimate;
+        // Guard against instruction-only updates that do not carry reserve snapshots:
+        // those updates otherwise default to 0 and can wipe valid balances.
+        let has_non_zero_balance_update = normalized_update.token_a_balance > 0.0
+            || normalized_update.token_b_balance > 0.0
+            || normalized_update.tvl_estimate > 0.0;
+        let has_all_zero_balance_update = normalized_update.token_a_balance == 0.0
+            && normalized_update.token_b_balance == 0.0
+            && normalized_update.tvl_estimate == 0.0;
+        let pool_already_zero = pool.token_a_balance == 0.0 && pool.token_b_balance == 0.0;
+        let apply_balance_update = has_non_zero_balance_update
+            || (has_all_zero_balance_update && pool_already_zero);
+
+        if apply_balance_update {
+            if normalized_update.token_a_balance.is_finite()
+                && normalized_update.token_a_balance >= 0.0
+            {
+                pool.token_a_balance = normalized_update.token_a_balance;
+            }
+            if normalized_update.token_b_balance.is_finite()
+                && normalized_update.token_b_balance >= 0.0
+            {
+                pool.token_b_balance = normalized_update.token_b_balance;
+            }
+            if normalized_update.tvl_estimate.is_finite() && normalized_update.tvl_estimate >= 0.0
+            {
+                pool.tvl_estimate = normalized_update.tvl_estimate;
+            }
         }
 
         if !pool.token_a_mint.is_empty() {
