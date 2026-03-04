@@ -36,8 +36,24 @@ const upsertPoolSql = `
       when excluded.updated_slot >= coalesce(pools.updated_slot, 0) then excluded.token_b_mint
       else pools.token_b_mint
     end,
-    token_a_symbol = coalesce(nullif(excluded.token_a_symbol, ''), pools.token_a_symbol),
-    token_b_symbol = coalesce(nullif(excluded.token_b_symbol, ''), pools.token_b_symbol),
+    token_a_symbol = case
+      when coalesce(nullif(excluded.token_a_symbol, ''), '') = '' then pools.token_a_symbol
+      when coalesce(excluded.token_a_mint, '') <> ''
+        and excluded.token_a_symbol = substring(excluded.token_a_mint from 1 for 4) || '..' || substring(excluded.token_a_mint from greatest(char_length(excluded.token_a_mint)-3, 1) for 4)
+        and coalesce(pools.token_a_symbol, '') <> ''
+        and pools.token_a_symbol <> substring(pools.token_a_mint from 1 for 4) || '..' || substring(pools.token_a_mint from greatest(char_length(pools.token_a_mint)-3, 1) for 4)
+        then pools.token_a_symbol
+      else excluded.token_a_symbol
+    end,
+    token_b_symbol = case
+      when coalesce(nullif(excluded.token_b_symbol, ''), '') = '' then pools.token_b_symbol
+      when coalesce(excluded.token_b_mint, '') <> ''
+        and excluded.token_b_symbol = substring(excluded.token_b_mint from 1 for 4) || '..' || substring(excluded.token_b_mint from greatest(char_length(excluded.token_b_mint)-3, 1) for 4)
+        and coalesce(pools.token_b_symbol, '') <> ''
+        and pools.token_b_symbol <> substring(pools.token_b_mint from 1 for 4) || '..' || substring(pools.token_b_mint from greatest(char_length(pools.token_b_mint)-3, 1) for 4)
+        then pools.token_b_symbol
+      else excluded.token_b_symbol
+    end,
     token_a_decimals = case
       when excluded.updated_slot >= coalesce(pools.updated_slot, 0) and excluded.token_a_decimals > 0
         then excluded.token_a_decimals
@@ -114,8 +130,24 @@ const upsertPositionSql = `
       when excluded.updated_slot >= coalesce(positions.updated_slot, 0) then excluded.token_b_mint
       else positions.token_b_mint
     end,
-    token_a_symbol = coalesce(nullif(excluded.token_a_symbol, ''), positions.token_a_symbol),
-    token_b_symbol = coalesce(nullif(excluded.token_b_symbol, ''), positions.token_b_symbol),
+    token_a_symbol = case
+      when coalesce(nullif(excluded.token_a_symbol, ''), '') = '' then positions.token_a_symbol
+      when coalesce(excluded.token_a_mint, '') <> ''
+        and excluded.token_a_symbol = substring(excluded.token_a_mint from 1 for 4) || '..' || substring(excluded.token_a_mint from greatest(char_length(excluded.token_a_mint)-3, 1) for 4)
+        and coalesce(positions.token_a_symbol, '') <> ''
+        and positions.token_a_symbol <> substring(positions.token_a_mint from 1 for 4) || '..' || substring(positions.token_a_mint from greatest(char_length(positions.token_a_mint)-3, 1) for 4)
+        then positions.token_a_symbol
+      else excluded.token_a_symbol
+    end,
+    token_b_symbol = case
+      when coalesce(nullif(excluded.token_b_symbol, ''), '') = '' then positions.token_b_symbol
+      when coalesce(excluded.token_b_mint, '') <> ''
+        and excluded.token_b_symbol = substring(excluded.token_b_mint from 1 for 4) || '..' || substring(excluded.token_b_mint from greatest(char_length(excluded.token_b_mint)-3, 1) for 4)
+        and coalesce(positions.token_b_symbol, '') <> ''
+        and positions.token_b_symbol <> substring(positions.token_b_mint from 1 for 4) || '..' || substring(positions.token_b_mint from greatest(char_length(positions.token_b_mint)-3, 1) for 4)
+        then positions.token_b_symbol
+      else excluded.token_b_symbol
+    end,
     token_a_decimals = case
       when excluded.updated_slot >= coalesce(positions.updated_slot, 0) and excluded.token_a_decimals > 0
         then excluded.token_a_decimals
