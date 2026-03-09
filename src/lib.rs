@@ -1882,10 +1882,20 @@ fn apply_amm_event(
             let balance_b = to_ui_amount(value.reserve_1_after, token_1_decimals);
 
             let entry = pool_updates.entry(value.pool_id).or_default();
-            if entry.token_a_decimals == 0 {
+            if !token_0_mint.is_empty() {
+                entry.token_a_mint = token_0_mint.clone();
+                entry.token_a_symbol =
+                    update_symbol_if_needed(&token_0_mint, &entry.token_a_symbol, token_symbols);
+            }
+            if !token_1_mint.is_empty() {
+                entry.token_b_mint = token_1_mint.clone();
+                entry.token_b_symbol =
+                    update_symbol_if_needed(&token_1_mint, &entry.token_b_symbol, token_symbols);
+            }
+            if token_0_decimals > 0 {
                 entry.token_a_decimals = token_0_decimals as u32;
             }
-            if entry.token_b_decimals == 0 {
+            if token_1_decimals > 0 {
                 entry.token_b_decimals = token_1_decimals as u32;
             }
             if volume > 0.0 {
@@ -1916,6 +1926,13 @@ fn pool_token_pair(
     tx_pool_mints: &HashMap<String, (String, String)>,
     pool_updates: &HashMap<String, PoolAccumulator>,
 ) -> (String, String) {
+    // Prefer transaction-local account order. Opposite-direction swaps in the
+    // same block can otherwise inherit a stale order from prior transactions.
+    if let Some((token_0_mint, token_1_mint)) = tx_pool_mints.get(pool_id) {
+        if !token_0_mint.is_empty() || !token_1_mint.is_empty() {
+            return (token_0_mint.clone(), token_1_mint.clone());
+        }
+    }
     if let Some(existing) = pool_updates.get(pool_id) {
         if !existing.token_a_mint.is_empty() || !existing.token_b_mint.is_empty() {
             return (existing.token_a_mint.clone(), existing.token_b_mint.clone());
