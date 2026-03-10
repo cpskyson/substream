@@ -6,6 +6,11 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || "0.0.0.0";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const CORS_ALLOW_CREDENTIALS = process.env.CORS_ALLOW_CREDENTIALS === "1";
+const SOLANA_CLUSTER = (process.env.SOLANA_CLUSTER || "devnet").trim();
+const TOKEN_EXPLORER_BASE_URL = (
+  process.env.TOKEN_EXPLORER_BASE_URL || "https://solscan.io/token"
+).trim();
 
 if (!DATABASE_URL) {
   console.error("DATABASE_URL is required");
@@ -16,17 +21,45 @@ const db = new Pool({
   connectionString: DATABASE_URL,
 });
 
-function responseHeaders() {
-  return {
-    "content-type": "application/json; charset=utf-8",
-    "access-control-allow-origin": CORS_ORIGIN,
-    "access-control-allow-methods": "GET,OPTIONS",
-    "access-control-allow-headers": "content-type,authorization",
-  };
+const corsOriginList = String(CORS_ORIGIN)
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+function resolveAllowedOrigin(requestOrigin) {
+  if (corsOriginList.includes("*")) {
+    return "*";
+  }
+  if (!requestOrigin) {
+    return "";
+  }
+  return corsOriginList.includes(requestOrigin) ? requestOrigin : "";
 }
 
-function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, responseHeaders());
+function responseHeaders(requestOrigin, requestHeaders) {
+  const allowedOrigin = resolveAllowedOrigin(requestOrigin);
+  const headers = {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-methods": "GET,OPTIONS",
+    "access-control-allow-headers":
+      requestHeaders || "content-type,authorization",
+  };
+
+  if (allowedOrigin) {
+    headers["access-control-allow-origin"] = allowedOrigin;
+    if (allowedOrigin !== "*") {
+      headers.vary = "Origin";
+    }
+    if (CORS_ALLOW_CREDENTIALS) {
+      headers["access-control-allow-credentials"] = "true";
+    }
+  }
+
+  return headers;
+}
+
+function sendJson(res, statusCode, payload, requestOrigin, requestHeaders) {
+  res.writeHead(statusCode, responseHeaders(requestOrigin, requestHeaders));
   res.end(JSON.stringify(payload));
 }
 
@@ -36,6 +69,22 @@ function parseIntInRange(value, fallback, min, max) {
   if (parsed < min) return min;
   if (parsed > max) return max;
   return parsed;
+}
+
+function buildTokenUrl(mint) {
+  if (!mint) return "";
+  const base = TOKEN_EXPLORER_BASE_URL.replace(/\/+$/, "");
+  const encodedMint = encodeURIComponent(mint);
+  const encodedCluster = encodeURIComponent(SOLANA_CLUSTER);
+  return `${base}/${encodedMint}?cluster=${encodedCluster}`;
+}
+
+function addTokenUrls(rows) {
+  return rows.map((row) => ({
+    ...row,
+    token_a_url: buildTokenUrl(row.token_a_mint),
+    token_b_url: buildTokenUrl(row.token_b_mint),
+  }));
 }
 
 function orderClause(sort, direction) {
@@ -65,16 +114,22 @@ function positionsOrderClause(sort, direction) {
   return `"${field}" ${dir} nulls last, "position_id" asc`;
 }
 
-async function handleHealth(res) {
+async function handleHealth(res, requestOrigin, requestHeaders) {
   try {
     await db.query("select 1");
-    sendJson(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true }, requestOrigin, requestHeaders);
   } catch (error) {
-    sendJson(res, 500, { ok: false, error: error.message });
+    sendJson(
+      res,
+      500,
+      { ok: false, error: error.message },
+      requestOrigin,
+      requestHeaders
+    );
   }
 }
 
-async function handlePools24h(url, res) {
+async function handlePools24h(url, res, requestOrigin, requestHeaders) {
   const rawLimit = url.searchParams.get("limit");
   const allRows = rawLimit === "all";
   const limit = parseIntInRange(rawLimit, 1000, 1, 10000);
@@ -107,24 +162,31 @@ async function handlePools24h(url, res) {
       result = await db.query(sql, [limit, offset]);
     }
 
+    const data = addTokenUrls(result.rows);
     sendJson(res, 200, {
-      data: result.rows,
+      data,
       pagination: {
         total,
         limit: allRows ? "all" : limit,
         offset,
-        returned: result.rows.length,
+        returned: data.length,
       },
-    });
+    }, requestOrigin, requestHeaders);
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    sendJson(res, 500, { error: error.message }, requestOrigin, requestHeaders);
   }
 }
 
-async function handlePositionsEnriched(url, res) {
+async function handlePositionsEnriched(url, res, requestOrigin, requestHeaders) {
   const owner = (url.searchParams.get("owner") || "").trim();
   if (!owner) {
-    sendJson(res, 400, { error: "owner is required" });
+    sendJson(
+      res,
+      400,
+      { error: "owner is required" },
+      requestOrigin,
+      requestHeaders
+    );
     return;
   }
 
@@ -165,23 +227,27 @@ async function handlePositionsEnriched(url, res) {
       result = await db.query(sql, [owner, limit, offset]);
     }
 
+    const data = addTokenUrls(result.rows);
     sendJson(res, 200, {
-      data: result.rows,
+      data,
       pagination: {
         total,
         limit: allRows ? "all" : limit,
         offset,
-        returned: result.rows.length,
+        returned: data.length,
       },
-    });
+    }, requestOrigin, requestHeaders);
   } catch (error) {
-    sendJson(res, 500, { error: error.message });
+    sendJson(res, 500, { error: error.message }, requestOrigin, requestHeaders);
   }
 }
 
 const server = http.createServer(async (req, res) => {
+  const requestOrigin = req.headers.origin || "";
+  const requestHeaders = req.headers["access-control-request-headers"] || "";
+
   if (req.method === "OPTIONS") {
-    res.writeHead(204, responseHeaders());
+    res.writeHead(204, responseHeaders(requestOrigin, requestHeaders));
     res.end();
     return;
   }
@@ -190,21 +256,21 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${host}`);
 
   if (req.method === "GET" && url.pathname === "/health") {
-    await handleHealth(res);
+    await handleHealth(res, requestOrigin, requestHeaders);
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/pools_24h") {
-    await handlePools24h(url, res);
+    await handlePools24h(url, res, requestOrigin, requestHeaders);
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/positions_enriched") {
-    await handlePositionsEnriched(url, res);
+    await handlePositionsEnriched(url, res, requestOrigin, requestHeaders);
     return;
   }
 
-  sendJson(res, 404, { error: "Not found" });
+  sendJson(res, 404, { error: "Not found" }, requestOrigin, requestHeaders);
 });
 
 server.listen(PORT, HOST, () => {

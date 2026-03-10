@@ -1273,14 +1273,14 @@ fn enrich_position_with_pool(
         position.fee_tier_bps = pool.fee_tier_bps;
     }
     if !position.token_a_mint.is_empty() {
-        position.token_a_symbol = resolve_symbol(
+        position.token_a_symbol = update_symbol_if_needed(
             &position.token_a_mint,
             &position.token_a_symbol,
             token_symbols,
         );
     }
     if !position.token_b_mint.is_empty() {
-        position.token_b_symbol = resolve_symbol(
+        position.token_b_symbol = update_symbol_if_needed(
             &position.token_b_mint,
             &position.token_b_symbol,
             token_symbols,
