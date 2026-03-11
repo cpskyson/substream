@@ -8,6 +8,9 @@ const HOST = process.env.HOST || "0.0.0.0";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const CORS_ALLOW_CREDENTIALS = process.env.CORS_ALLOW_CREDENTIALS === "1";
 const SOLANA_CLUSTER = (process.env.SOLANA_CLUSTER || "devnet").trim();
+const TOKEN_URL_SOURCE = (process.env.TOKEN_URL_SOURCE || "metadata")
+  .trim()
+  .toLowerCase();
 const TOKEN_EXPLORER_BASE_URL = (
   process.env.TOKEN_EXPLORER_BASE_URL || "https://solscan.io/token"
 ).trim();
@@ -79,11 +82,29 @@ function buildTokenUrl(mint) {
   return `${base}/${encodedMint}?cluster=${encodedCluster}`;
 }
 
+function normalizeMetadataUrl(value) {
+  if (value === null || value === undefined) return "";
+  const url = String(value).trim();
+  if (!url) return "";
+  return url;
+}
+
+function resolveTokenUrl(row, mintKey, uriKey) {
+  const metadataUrl = normalizeMetadataUrl(row[uriKey]);
+  if (TOKEN_URL_SOURCE !== "explorer") {
+    return metadataUrl;
+  }
+  if (metadataUrl) {
+    return metadataUrl;
+  }
+  return buildTokenUrl(row[mintKey]);
+}
+
 function addTokenUrls(rows) {
   return rows.map((row) => ({
     ...row,
-    token_a_url: buildTokenUrl(row.token_a_mint),
-    token_b_url: buildTokenUrl(row.token_b_mint),
+    token_a_url: resolveTokenUrl(row, "token_a_mint", "token_a_uri"),
+    token_b_url: resolveTokenUrl(row, "token_b_mint", "token_b_uri"),
   }));
 }
 

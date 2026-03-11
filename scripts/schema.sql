@@ -4,6 +4,8 @@ create table if not exists pools (
   token_b_mint text,
   token_a_symbol text,
   token_b_symbol text,
+  token_a_uri text,
+  token_b_uri text,
   token_a_decimals int,
   token_b_decimals int,
   fee_tier_bps int,
@@ -24,6 +26,8 @@ create table if not exists positions (
   token_b_mint text,
   token_a_symbol text,
   token_b_symbol text,
+  token_a_uri text,
+  token_b_uri text,
   token_a_decimals int,
   token_b_decimals int,
   fee_tier_bps int,
@@ -34,6 +38,10 @@ create table if not exists positions (
 );
 
 alter table positions add column if not exists owner text;
+alter table pools add column if not exists token_a_uri text;
+alter table pools add column if not exists token_b_uri text;
+alter table positions add column if not exists token_a_uri text;
+alter table positions add column if not exists token_b_uri text;
 create index if not exists idx_positions_owner on positions(owner);
 
 create table if not exists pool_hourly (
@@ -89,6 +97,8 @@ select
   p.token_b_mint,
   p.token_a_symbol,
   p.token_b_symbol,
+  p.token_a_uri,
+  p.token_b_uri,
   p.token_a_decimals,
   p.token_b_decimals,
   p.token_a_balance,

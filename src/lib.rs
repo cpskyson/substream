@@ -26,6 +26,7 @@ const HOURS_IN_DAY: i64 = 24;
 const POOL_ID_INDEX_KEY: &str = "pool_ids";
 const POSITION_ID_INDEX_KEY: &str = "position_ids";
 const TOKEN_SYMBOL_KEY_PREFIX: &str = "token_symbol";
+const TOKEN_URI_KEY_PREFIX: &str = "token_uri";
 const LOG_PROGRAM_DATA_PREFIX: &str = "Program data: ";
 
 const IX_CREATE_POOL: [u8; 8] = [233, 146, 209, 142, 207, 104, 64, 188];
@@ -331,32 +332,38 @@ fn map_amm_updates(
 
     let mut pools: Vec<mydata::Pool> = pool_updates
         .into_values()
-        .map(|value| mydata::Pool {
-            pool_id: value.pool_id,
-            token_a_mint: value.token_a_mint,
-            token_b_mint: value.token_b_mint,
-            token_a_symbol: value.token_a_symbol,
-            token_b_symbol: value.token_b_symbol,
-            token_a_decimals: value.token_a_decimals,
-            token_b_decimals: value.token_b_decimals,
-            fee_tier_bps: value.fee_tier_bps,
-            volume_24h: value.volume_delta,
-            fees_24h: value.fee_delta,
-            apr_24h: 0.0,
-            tvl_estimate: value.tvl_estimate,
-            token_a_balance: value.token_a_balance,
-            token_b_balance: value.token_b_balance,
-            tvl_usd: 0.0,
-            token_a_price_usd: 0.0,
-            token_b_price_usd: 0.0,
-            volume_24h_usd: 0.0,
-            fees_24h_usd: 0.0,
-            apr_24h_usd: 0.0,
-            volume_a_delta: value.volume_a_delta,
-            volume_b_delta: value.volume_b_delta,
-            fees_a_delta: value.fee_a_delta,
-            fees_b_delta: value.fee_b_delta,
-            lp_supply: value.lp_supply,
+        .map(|value| {
+            let token_a_uri = resolve_token_uri(&value.token_a_mint, &token_symbols);
+            let token_b_uri = resolve_token_uri(&value.token_b_mint, &token_symbols);
+            mydata::Pool {
+                pool_id: value.pool_id,
+                token_a_mint: value.token_a_mint,
+                token_b_mint: value.token_b_mint,
+                token_a_symbol: value.token_a_symbol,
+                token_b_symbol: value.token_b_symbol,
+                token_a_uri,
+                token_b_uri,
+                token_a_decimals: value.token_a_decimals,
+                token_b_decimals: value.token_b_decimals,
+                fee_tier_bps: value.fee_tier_bps,
+                volume_24h: value.volume_delta,
+                fees_24h: value.fee_delta,
+                apr_24h: 0.0,
+                tvl_estimate: value.tvl_estimate,
+                token_a_balance: value.token_a_balance,
+                token_b_balance: value.token_b_balance,
+                tvl_usd: 0.0,
+                token_a_price_usd: 0.0,
+                token_b_price_usd: 0.0,
+                volume_24h_usd: 0.0,
+                fees_24h_usd: 0.0,
+                apr_24h_usd: 0.0,
+                volume_a_delta: value.volume_a_delta,
+                volume_b_delta: value.volume_b_delta,
+                fees_a_delta: value.fee_a_delta,
+                fees_b_delta: value.fee_b_delta,
+                lp_supply: value.lp_supply,
+            }
         })
         .collect();
     // Compute USD prices and TVL for the pools updated in this block.
@@ -365,22 +372,28 @@ fn map_amm_updates(
 
     let mut positions: Vec<mydata::Position> = position_updates
         .into_values()
-        .map(|value| mydata::Position {
-            position_id: value.position_id,
-            pool_id: value.pool_id,
-            owner: value.owner,
-            token_a_mint: value.token_a_mint,
-            token_b_mint: value.token_b_mint,
-            token_a_symbol: value.token_a_symbol,
-            token_b_symbol: value.token_b_symbol,
-            token_a_decimals: value.token_a_decimals,
-            token_b_decimals: value.token_b_decimals,
-            fee_tier_bps: value.fee_tier_bps,
-            pool_value: value.pool_value,
-            token_a_balance: value.token_a_balance,
-            token_b_balance: value.token_b_balance,
-            pending_rewards: value.pending_rewards,
-            lp_balance: value.lp_balance,
+        .map(|value| {
+            let token_a_uri = resolve_token_uri(&value.token_a_mint, &token_symbols);
+            let token_b_uri = resolve_token_uri(&value.token_b_mint, &token_symbols);
+            mydata::Position {
+                position_id: value.position_id,
+                pool_id: value.pool_id,
+                owner: value.owner,
+                token_a_mint: value.token_a_mint,
+                token_b_mint: value.token_b_mint,
+                token_a_symbol: value.token_a_symbol,
+                token_b_symbol: value.token_b_symbol,
+                token_a_uri,
+                token_b_uri,
+                token_a_decimals: value.token_a_decimals,
+                token_b_decimals: value.token_b_decimals,
+                fee_tier_bps: value.fee_tier_bps,
+                pool_value: value.pool_value,
+                token_a_balance: value.token_a_balance,
+                token_b_balance: value.token_b_balance,
+                pending_rewards: value.pending_rewards,
+                lp_balance: value.lp_balance,
+            }
         })
         .collect();
     positions.sort_by(|left, right| left.position_id.cmp(&right.position_id));
@@ -644,10 +657,14 @@ fn map_my_data(
         if !pool.token_a_mint.is_empty() {
             pool.token_a_symbol =
                 resolve_symbol(&pool.token_a_mint, &pool.token_a_symbol, &token_symbols);
+            pool.token_a_uri =
+                update_token_uri_if_needed(&pool.token_a_mint, &pool.token_a_uri, &token_symbols);
         }
         if !pool.token_b_mint.is_empty() {
             pool.token_b_symbol =
                 resolve_symbol(&pool.token_b_mint, &pool.token_b_symbol, &token_symbols);
+            pool.token_b_uri =
+                update_token_uri_if_needed(&pool.token_b_mint, &pool.token_b_uri, &token_symbols);
         }
         if pool.token_a_decimals == 0 {
             if let Some(decimals) = decimals_for_mint(&pool.token_a_mint) {
@@ -691,11 +708,21 @@ fn map_my_data(
                 &position.token_a_symbol,
                 &token_symbols,
             );
+            position.token_a_uri = update_token_uri_if_needed(
+                &position.token_a_mint,
+                &position.token_a_uri,
+                &token_symbols,
+            );
         }
         if !position.token_b_mint.is_empty() {
             position.token_b_symbol = resolve_symbol(
                 &position.token_b_mint,
                 &position.token_b_symbol,
+                &token_symbols,
+            );
+            position.token_b_uri = update_token_uri_if_needed(
+                &position.token_b_mint,
+                &position.token_b_uri,
                 &token_symbols,
             );
         }
@@ -981,10 +1008,14 @@ fn map_amm_priced(
         if !pool.token_a_mint.is_empty() {
             pool.token_a_symbol =
                 resolve_symbol(&pool.token_a_mint, &pool.token_a_symbol, &token_symbols);
+            pool.token_a_uri =
+                update_token_uri_if_needed(&pool.token_a_mint, &pool.token_a_uri, &token_symbols);
         }
         if !pool.token_b_mint.is_empty() {
             pool.token_b_symbol =
                 resolve_symbol(&pool.token_b_mint, &pool.token_b_symbol, &token_symbols);
+            pool.token_b_uri =
+                update_token_uri_if_needed(&pool.token_b_mint, &pool.token_b_uri, &token_symbols);
         }
         if pool.token_a_decimals == 0 {
             if let Some(decimals) = decimals_for_mint(&pool.token_a_mint) {
@@ -1038,6 +1069,10 @@ fn map_amm_priced(
                 &mut normalized_update.token_b_symbol,
             );
             std::mem::swap(
+                &mut normalized_update.token_a_uri,
+                &mut normalized_update.token_b_uri,
+            );
+            std::mem::swap(
                 &mut normalized_update.token_a_decimals,
                 &mut normalized_update.token_b_decimals,
             );
@@ -1071,8 +1106,8 @@ fn map_amm_priced(
             && normalized_update.token_b_balance == 0.0
             && normalized_update.tvl_estimate == 0.0;
         let pool_already_zero = pool.token_a_balance == 0.0 && pool.token_b_balance == 0.0;
-        let apply_balance_update = has_non_zero_balance_update
-            || (has_all_zero_balance_update && pool_already_zero);
+        let apply_balance_update =
+            has_non_zero_balance_update || (has_all_zero_balance_update && pool_already_zero);
 
         if apply_balance_update {
             if normalized_update.token_a_balance.is_finite()
@@ -1085,8 +1120,7 @@ fn map_amm_priced(
             {
                 pool.token_b_balance = normalized_update.token_b_balance;
             }
-            if normalized_update.tvl_estimate.is_finite() && normalized_update.tvl_estimate >= 0.0
-            {
+            if normalized_update.tvl_estimate.is_finite() && normalized_update.tvl_estimate >= 0.0 {
                 pool.tvl_estimate = normalized_update.tvl_estimate;
             }
         }
@@ -1094,10 +1128,14 @@ fn map_amm_priced(
         if !pool.token_a_mint.is_empty() {
             pool.token_a_symbol =
                 resolve_symbol(&pool.token_a_mint, &pool.token_a_symbol, &token_symbols);
+            pool.token_a_uri =
+                update_token_uri_if_needed(&pool.token_a_mint, &pool.token_a_uri, &token_symbols);
         }
         if !pool.token_b_mint.is_empty() {
             pool.token_b_symbol =
                 resolve_symbol(&pool.token_b_mint, &pool.token_b_symbol, &token_symbols);
+            pool.token_b_uri =
+                update_token_uri_if_needed(&pool.token_b_mint, &pool.token_b_uri, &token_symbols);
         }
         if pool.token_a_decimals == 0 {
             if let Some(decimals) = decimals_for_mint(&pool.token_a_mint) {
@@ -1272,10 +1310,21 @@ fn enrich_position_with_pool(
     if position.fee_tier_bps == 0 && pool.fee_tier_bps > 0 {
         position.fee_tier_bps = pool.fee_tier_bps;
     }
+    if !pool.token_a_uri.is_empty() {
+        position.token_a_uri = pool.token_a_uri.clone();
+    }
+    if !pool.token_b_uri.is_empty() {
+        position.token_b_uri = pool.token_b_uri.clone();
+    }
     if !position.token_a_mint.is_empty() {
         position.token_a_symbol = update_symbol_if_needed(
             &position.token_a_mint,
             &position.token_a_symbol,
+            token_symbols,
+        );
+        position.token_a_uri = update_token_uri_if_needed(
+            &position.token_a_mint,
+            &position.token_a_uri,
             token_symbols,
         );
     }
@@ -1283,6 +1332,11 @@ fn enrich_position_with_pool(
         position.token_b_symbol = update_symbol_if_needed(
             &position.token_b_mint,
             &position.token_b_symbol,
+            token_symbols,
+        );
+        position.token_b_uri = update_token_uri_if_needed(
+            &position.token_b_mint,
+            &position.token_b_uri,
             token_symbols,
         );
     }
@@ -1334,18 +1388,30 @@ fn collect_metaplex_metadata(ord: u64, transactions: &Transactions, output: &Sto
         let account_keys = resolved_account_keys(message, tx.meta.as_ref());
 
         for ix in message.instructions.iter() {
-            if let Some((mint, symbol)) = parse_metaplex_metadata_instruction(&account_keys, ix) {
-                output.set(ord, token_symbol_key(&mint), &symbol);
+            if let Some((mint, symbol, uri)) =
+                parse_metaplex_metadata_instruction(&account_keys, ix)
+            {
+                if !symbol.is_empty() {
+                    output.set(ord, token_symbol_key(&mint), &symbol);
+                }
+                if !uri.is_empty() {
+                    output.set(ord, token_uri_key(&mint), &uri);
+                }
             }
         }
 
         if let Some(meta) = tx.meta.as_ref() {
             for inner in meta.inner_instructions.iter() {
                 for ix in inner.instructions.iter() {
-                    if let Some((mint, symbol)) =
+                    if let Some((mint, symbol, uri)) =
                         parse_metaplex_metadata_instruction(&account_keys, ix)
                     {
-                        output.set(ord, token_symbol_key(&mint), &symbol);
+                        if !symbol.is_empty() {
+                            output.set(ord, token_symbol_key(&mint), &symbol);
+                        }
+                        if !uri.is_empty() {
+                            output.set(ord, token_uri_key(&mint), &uri);
+                        }
                     }
                 }
             }
@@ -1372,18 +1438,30 @@ fn collect_token_2022_metadata(ord: u64, transactions: &Transactions, output: &S
         let account_keys = resolved_account_keys(message, tx.meta.as_ref());
 
         for ix in message.instructions.iter() {
-            if let Some((mint, symbol)) = parse_token_2022_metadata_instruction(&account_keys, ix) {
-                output.set(ord, token_symbol_key(&mint), &symbol);
+            if let Some((mint, symbol, uri)) =
+                parse_token_2022_metadata_instruction(&account_keys, ix)
+            {
+                if !symbol.is_empty() {
+                    output.set(ord, token_symbol_key(&mint), &symbol);
+                }
+                if !uri.is_empty() {
+                    output.set(ord, token_uri_key(&mint), &uri);
+                }
             }
         }
 
         if let Some(meta) = tx.meta.as_ref() {
             for inner in meta.inner_instructions.iter() {
                 for ix in inner.instructions.iter() {
-                    if let Some((mint, symbol)) =
+                    if let Some((mint, symbol, uri)) =
                         parse_token_2022_metadata_instruction(&account_keys, ix)
                     {
-                        output.set(ord, token_symbol_key(&mint), &symbol);
+                        if !symbol.is_empty() {
+                            output.set(ord, token_symbol_key(&mint), &symbol);
+                        }
+                        if !uri.is_empty() {
+                            output.set(ord, token_uri_key(&mint), &uri);
+                        }
                     }
                 }
             }
@@ -1413,7 +1491,7 @@ fn resolved_account_keys(message: &Message, meta: Option<&TransactionStatusMeta>
 fn parse_metaplex_metadata_instruction(
     account_keys: &[String],
     instruction: &impl InstructionLike,
-) -> Option<(String, String)> {
+) -> Option<(String, String, String)> {
     let program_id = account_keys
         .get(instruction.program_id_index() as usize)
         .map(|value| value.as_str())
@@ -1429,14 +1507,18 @@ fn parse_metaplex_metadata_instruction(
     }
 
     let meta = parse_metaplex_metadata_fields(instruction.data())?;
-    let symbol = sanitize_symbol(&meta.symbol)?;
-    Some((mint, symbol))
+    let symbol = sanitize_symbol(&meta.symbol).unwrap_or_default();
+    let uri = sanitize_uri(&meta.uri).unwrap_or_default();
+    if symbol.is_empty() && uri.is_empty() {
+        return None;
+    }
+    Some((mint, symbol, uri))
 }
 
 fn parse_token_2022_metadata_instruction(
     account_keys: &[String],
     instruction: &impl InstructionLike,
-) -> Option<(String, String)> {
+) -> Option<(String, String, String)> {
     let program_id = account_keys
         .get(instruction.program_id_index() as usize)
         .map(|value| value.as_str())
@@ -1447,8 +1529,12 @@ fn parse_token_2022_metadata_instruction(
 
     let mint = resolve_instruction_account(account_keys, instruction.accounts(), 0)?;
     let meta = parse_token_2022_metadata_fields(instruction.data())?;
-    let symbol = sanitize_symbol(&meta.symbol)?;
-    Some((mint, symbol))
+    let symbol = sanitize_symbol(&meta.symbol).unwrap_or_default();
+    let uri = sanitize_uri(&meta.uri).unwrap_or_default();
+    if symbol.is_empty() && uri.is_empty() {
+        return None;
+    }
+    Some((mint, symbol, uri))
 }
 
 fn apply_amm_instruction(
@@ -1802,13 +1888,19 @@ fn apply_amm_event(
             let balance_b = to_ui_amount(value.reserve_1_after, value.token_1_decimals);
             if !value.token_0_mint.is_empty() {
                 entry.token_a_mint = value.token_0_mint.clone();
-                entry.token_a_symbol =
-                    update_symbol_if_needed(&value.token_0_mint, &entry.token_a_symbol, token_symbols);
+                entry.token_a_symbol = update_symbol_if_needed(
+                    &value.token_0_mint,
+                    &entry.token_a_symbol,
+                    token_symbols,
+                );
             }
             if !value.token_1_mint.is_empty() {
                 entry.token_b_mint = value.token_1_mint.clone();
-                entry.token_b_symbol =
-                    update_symbol_if_needed(&value.token_1_mint, &entry.token_b_symbol, token_symbols);
+                entry.token_b_symbol = update_symbol_if_needed(
+                    &value.token_1_mint,
+                    &entry.token_b_symbol,
+                    token_symbols,
+                );
             }
             entry.token_a_decimals = value.token_0_decimals as u32;
             entry.token_b_decimals = value.token_1_decimals as u32;
@@ -1834,13 +1926,19 @@ fn apply_amm_event(
             let balance_b = to_ui_amount(value.reserve_1_after, token_1_decimals);
             if !value.token_0_mint.is_empty() {
                 entry.token_a_mint = value.token_0_mint.clone();
-                entry.token_a_symbol =
-                    update_symbol_if_needed(&value.token_0_mint, &entry.token_a_symbol, token_symbols);
+                entry.token_a_symbol = update_symbol_if_needed(
+                    &value.token_0_mint,
+                    &entry.token_a_symbol,
+                    token_symbols,
+                );
             }
             if !value.token_1_mint.is_empty() {
                 entry.token_b_mint = value.token_1_mint.clone();
-                entry.token_b_symbol =
-                    update_symbol_if_needed(&value.token_1_mint, &entry.token_b_symbol, token_symbols);
+                entry.token_b_symbol = update_symbol_if_needed(
+                    &value.token_1_mint,
+                    &entry.token_b_symbol,
+                    token_symbols,
+                );
             }
             if entry.token_a_decimals == 0 {
                 entry.token_a_decimals = token_0_decimals as u32;
@@ -2298,6 +2396,16 @@ fn sanitize_symbol(symbol: &str) -> Option<String> {
     Some(trimmed)
 }
 
+fn sanitize_uri(uri: &str) -> Option<String> {
+    let trimmed = uri
+        .trim_matches(|value: char| value == '\0' || value.is_whitespace())
+        .to_string();
+    if trimmed.is_empty() || trimmed.len() > 512 {
+        return None;
+    }
+    Some(trimmed)
+}
+
 fn is_metaplex_metadata_pda(metadata_account: &str, mint: &str) -> bool {
     let metadata_key = match Pubkey::from_str(metadata_account) {
         Ok(key) => key,
@@ -2363,6 +2471,27 @@ fn update_symbol_if_needed(mint: &str, existing: &str, token_symbols: &StoreGetS
         return resolve_symbol(mint, "", token_symbols);
     }
     existing.to_string()
+}
+
+fn resolve_token_uri(mint: &str, token_metadata: &StoreGetString) -> String {
+    if mint.is_empty() {
+        return String::new();
+    }
+    if let Some(uri) = token_metadata.get_last(token_uri_key(mint)) {
+        return sanitize_uri(&uri).unwrap_or_default();
+    }
+    String::new()
+}
+
+fn update_token_uri_if_needed(
+    mint: &str,
+    existing: &str,
+    token_metadata: &StoreGetString,
+) -> String {
+    if !existing.is_empty() {
+        return existing.to_string();
+    }
+    resolve_token_uri(mint, token_metadata)
 }
 
 fn fallback_symbol_for_mint(mint: &str) -> String {
@@ -2484,6 +2613,10 @@ fn position_metadata_key(position_id: &str) -> String {
 
 fn token_symbol_key(mint: &str) -> String {
     format!("{TOKEN_SYMBOL_KEY_PREFIX}:{mint}")
+}
+
+fn token_uri_key(mint: &str) -> String {
+    format!("{TOKEN_URI_KEY_PREFIX}:{mint}")
 }
 
 struct BytesReader<'a> {

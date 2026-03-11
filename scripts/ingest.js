@@ -13,6 +13,8 @@ const upsertPoolSql = `
     token_b_mint,
     token_a_symbol,
     token_b_symbol,
+    token_a_uri,
+    token_b_uri,
     token_a_decimals,
     token_b_decimals,
     fee_tier_bps,
@@ -25,7 +27,7 @@ const upsertPoolSql = `
     updated_slot
   )
   values (
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
   )
   on conflict (pool_id) do update set
     token_a_mint = case
@@ -54,6 +56,8 @@ const upsertPoolSql = `
         then pools.token_b_symbol
       else excluded.token_b_symbol
     end,
+    token_a_uri = coalesce(nullif(excluded.token_a_uri, ''), pools.token_a_uri),
+    token_b_uri = coalesce(nullif(excluded.token_b_uri, ''), pools.token_b_uri),
     token_a_decimals = case
       when excluded.updated_slot >= coalesce(pools.updated_slot, 0) and excluded.token_a_decimals > 0
         then excluded.token_a_decimals
@@ -105,6 +109,8 @@ const upsertPositionSql = `
     token_b_mint,
     token_a_symbol,
     token_b_symbol,
+    token_a_uri,
+    token_b_uri,
     token_a_decimals,
     token_b_decimals,
     fee_tier_bps,
@@ -114,7 +120,7 @@ const upsertPositionSql = `
     updated_slot
   )
   values (
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
   )
   on conflict (position_id) do update set
     pool_id = case
@@ -148,6 +154,8 @@ const upsertPositionSql = `
         then positions.token_b_symbol
       else excluded.token_b_symbol
     end,
+    token_a_uri = coalesce(nullif(excluded.token_a_uri, ''), positions.token_a_uri),
+    token_b_uri = coalesce(nullif(excluded.token_b_uri, ''), positions.token_b_uri),
     token_a_decimals = case
       when excluded.updated_slot >= coalesce(positions.updated_slot, 0) and excluded.token_a_decimals > 0
         then excluded.token_a_decimals
@@ -228,6 +236,8 @@ async function handleAmmUpdates(payload) {
       toString(getField(p, "tokenBMint", "token_b_mint")),
       toString(getField(p, "tokenASymbol", "token_a_symbol")),
       toString(getField(p, "tokenBSymbol", "token_b_symbol")),
+      toString(getField(p, "tokenAUri", "token_a_uri")),
+      toString(getField(p, "tokenBUri", "token_b_uri")),
       toNumber(getField(p, "tokenADecimals", "token_a_decimals")),
       toNumber(getField(p, "tokenBDecimals", "token_b_decimals")),
       toNumber(getField(p, "feeTierBps", "fee_tier_bps")),
@@ -253,6 +263,8 @@ async function handleAmmUpdates(payload) {
       toString(getField(p, "tokenBMint", "token_b_mint")),
       toString(getField(p, "tokenASymbol", "token_a_symbol")),
       toString(getField(p, "tokenBSymbol", "token_b_symbol")),
+      toString(getField(p, "tokenAUri", "token_a_uri")),
+      toString(getField(p, "tokenBUri", "token_b_uri")),
       toNumber(getField(p, "tokenADecimals", "token_a_decimals")),
       toNumber(getField(p, "tokenBDecimals", "token_b_decimals")),
       toNumber(getField(p, "feeTierBps", "fee_tier_bps")),

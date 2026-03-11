@@ -28,6 +28,8 @@ message Pool {
   double fees_a_delta = 23;
   double fees_b_delta = 24;
   double lp_supply = 25;
+  string token_a_uri = 26;
+  string token_b_uri = 27;
 }
 
 message Position {
@@ -46,6 +48,8 @@ message Position {
   double pending_rewards = 13;
   string owner = 14;
   double lp_balance = 15;
+  string token_a_uri = 16;
+  string token_b_uri = 17;
 }
 
 message PoolHour {

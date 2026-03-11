@@ -53,6 +53,10 @@ pub struct Pool {
     pub fees_b_delta: f64,
     #[prost(double, tag="25")]
     pub lp_supply: f64,
+    #[prost(string, tag="26")]
+    pub token_a_uri: ::prost::alloc::string::String,
+    #[prost(string, tag="27")]
+    pub token_b_uri: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -87,6 +91,10 @@ pub struct Position {
     pub owner: ::prost::alloc::string::String,
     #[prost(double, tag="15")]
     pub lp_balance: f64,
+    #[prost(string, tag="16")]
+    pub token_a_uri: ::prost::alloc::string::String,
+    #[prost(string, tag="17")]
+    pub token_b_uri: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
