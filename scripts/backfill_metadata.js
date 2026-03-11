@@ -5,7 +5,11 @@ const METAPLEX_METADATA_PROGRAM_ID =
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s";
 
 const STATIC_TOKEN_METADATA = Object.freeze({
-  So11111111111111111111111111111111111111112: { symbol: "SOL", decimals: 9 },
+  So11111111111111111111111111111111111111112: {
+    symbol: "SOL",
+    decimals: 9,
+    uri: "",
+  },
 });
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -29,13 +33,13 @@ let rpcId = 1;
 
 const selectCandidateMintsSql = `
 with mint_rows as (
-  select token_a_mint as mint, token_a_symbol as symbol, token_a_decimals as decimals from pools
+  select token_a_mint as mint, token_a_symbol as symbol, token_a_decimals as decimals, token_a_uri as uri from pools
   union all
-  select token_b_mint as mint, token_b_symbol as symbol, token_b_decimals as decimals from pools
+  select token_b_mint as mint, token_b_symbol as symbol, token_b_decimals as decimals, token_b_uri as uri from pools
   union all
-  select token_a_mint as mint, token_a_symbol as symbol, token_a_decimals as decimals from positions
+  select token_a_mint as mint, token_a_symbol as symbol, token_a_decimals as decimals, token_a_uri as uri from positions
   union all
-  select token_b_mint as mint, token_b_symbol as symbol, token_b_decimals as decimals from positions
+  select token_b_mint as mint, token_b_symbol as symbol, token_b_decimals as decimals, token_b_uri as uri from positions
 )
 select distinct mint
 from mint_rows
@@ -45,6 +49,7 @@ where mint is not null
     coalesce(symbol, '') = ''
     or symbol = substring(mint from 1 for 4) || '..' || substring(mint from greatest(char_length(mint)-3, 1) for 4)
     or coalesce(decimals, 0) = 0
+    or coalesce(uri, '') = ''
   )
 order by mint
 `;
@@ -62,6 +67,10 @@ set
   token_a_decimals = case
     when $3 > 0 and coalesce(token_a_decimals, 0) = 0 then $3
     else token_a_decimals
+  end,
+  token_a_uri = case
+    when $4 <> '' and coalesce(token_a_uri, '') = '' then $4
+    else token_a_uri
   end
 where token_a_mint = $1
   and (
@@ -70,6 +79,7 @@ where token_a_mint = $1
       or token_a_symbol = substring(token_a_mint from 1 for 4) || '..' || substring(token_a_mint from greatest(char_length(token_a_mint)-3, 1) for 4)
     ))
     or ($3 > 0 and coalesce(token_a_decimals, 0) = 0)
+    or ($4 <> '' and coalesce(token_a_uri, '') = '')
   )
 `;
 
@@ -86,6 +96,10 @@ set
   token_b_decimals = case
     when $3 > 0 and coalesce(token_b_decimals, 0) = 0 then $3
     else token_b_decimals
+  end,
+  token_b_uri = case
+    when $4 <> '' and coalesce(token_b_uri, '') = '' then $4
+    else token_b_uri
   end
 where token_b_mint = $1
   and (
@@ -94,6 +108,7 @@ where token_b_mint = $1
       or token_b_symbol = substring(token_b_mint from 1 for 4) || '..' || substring(token_b_mint from greatest(char_length(token_b_mint)-3, 1) for 4)
     ))
     or ($3 > 0 and coalesce(token_b_decimals, 0) = 0)
+    or ($4 <> '' and coalesce(token_b_uri, '') = '')
   )
 `;
 
@@ -110,6 +125,10 @@ set
   token_a_decimals = case
     when $3 > 0 and coalesce(token_a_decimals, 0) = 0 then $3
     else token_a_decimals
+  end,
+  token_a_uri = case
+    when $4 <> '' and coalesce(token_a_uri, '') = '' then $4
+    else token_a_uri
   end
 where token_a_mint = $1
   and (
@@ -118,6 +137,7 @@ where token_a_mint = $1
       or token_a_symbol = substring(token_a_mint from 1 for 4) || '..' || substring(token_a_mint from greatest(char_length(token_a_mint)-3, 1) for 4)
     ))
     or ($3 > 0 and coalesce(token_a_decimals, 0) = 0)
+    or ($4 <> '' and coalesce(token_a_uri, '') = '')
   )
 `;
 
@@ -134,6 +154,10 @@ set
   token_b_decimals = case
     when $3 > 0 and coalesce(token_b_decimals, 0) = 0 then $3
     else token_b_decimals
+  end,
+  token_b_uri = case
+    when $4 <> '' and coalesce(token_b_uri, '') = '' then $4
+    else token_b_uri
   end
 where token_b_mint = $1
   and (
@@ -142,6 +166,7 @@ where token_b_mint = $1
       or token_b_symbol = substring(token_b_mint from 1 for 4) || '..' || substring(token_b_mint from greatest(char_length(token_b_mint)-3, 1) for 4)
     ))
     or ($3 > 0 and coalesce(token_b_decimals, 0) = 0)
+    or ($4 <> '' and coalesce(token_b_uri, '') = '')
   )
 `;
 
@@ -221,9 +246,16 @@ function sanitizeSymbol(symbol) {
     .slice(0, 32);
 }
 
-function decodeMetaplexSymbol(dataBase64) {
-  if (!dataBase64) {
+function sanitizeUri(uri) {
+  if (!uri) {
     return "";
+  }
+  return String(uri).replace(/\0/g, "").trim().slice(0, 512);
+}
+
+function decodeMetaplexMetadata(dataBase64) {
+  if (!dataBase64) {
+    return { symbol: "", uri: "" };
   }
   const buffer = Buffer.from(dataBase64, "base64");
 
@@ -231,18 +263,26 @@ function decodeMetaplexSymbol(dataBase64) {
   let offset = 65;
   const name = readBorshString(buffer, offset);
   if (!name) {
-    return "";
+    return { symbol: "", uri: "" };
   }
   offset = name.offset;
   const symbol = readBorshString(buffer, offset);
   if (!symbol) {
-    return "";
+    return { symbol: "", uri: "" };
+  }
+  offset = symbol.offset;
+  const uri = readBorshString(buffer, offset);
+  if (!uri) {
+    return { symbol: sanitizeSymbol(symbol.value), uri: "" };
   }
 
-  return sanitizeSymbol(symbol.value);
+  return {
+    symbol: sanitizeSymbol(symbol.value),
+    uri: sanitizeUri(uri.value),
+  };
 }
 
-async function fetchSymbolFromMetaplex(mint) {
+async function fetchMetadataFromMetaplex(mint) {
   const result = await rpcCallWithRetry("getProgramAccounts", [
     METAPLEX_METADATA_PROGRAM_ID,
     {
@@ -259,11 +299,11 @@ async function fetchSymbolFromMetaplex(mint) {
   const first = result[0];
   const rawData = first?.account?.data;
   if (!rawData) {
-    return "";
+    return { symbol: "", uri: "" };
   }
 
   const dataBase64 = Array.isArray(rawData) ? rawData[0] : rawData;
-  return decodeMetaplexSymbol(dataBase64);
+  return decodeMetaplexMetadata(dataBase64);
 }
 
 async function fetchDecimals(mint) {
@@ -276,9 +316,14 @@ async function fetchDecimals(mint) {
 }
 
 async function resolveMintMetadata(mint) {
-  const staticMetadata = STATIC_TOKEN_METADATA[mint] || { symbol: "", decimals: 0 };
+  const staticMetadata = STATIC_TOKEN_METADATA[mint] || {
+    symbol: "",
+    decimals: 0,
+    uri: "",
+  };
   let symbol = staticMetadata.symbol || "";
   let decimals = staticMetadata.decimals || 0;
+  let uri = staticMetadata.uri || "";
 
   if (decimals <= 0) {
     try {
@@ -290,9 +335,19 @@ async function resolveMintMetadata(mint) {
 
   if (!symbol) {
     try {
-      symbol = await fetchSymbolFromMetaplex(mint);
+      const metadata = await fetchMetadataFromMetaplex(mint);
+      symbol = metadata.symbol || "";
+      uri = metadata.uri || "";
     } catch (_) {
       symbol = "";
+      uri = "";
+    }
+  } else if (!uri) {
+    try {
+      const metadata = await fetchMetadataFromMetaplex(mint);
+      uri = metadata.uri || "";
+    } catch (_) {
+      uri = "";
     }
   }
 
@@ -300,6 +355,7 @@ async function resolveMintMetadata(mint) {
     mint,
     symbol: sanitizeSymbol(symbol),
     decimals: Number.isFinite(decimals) ? Math.max(0, Math.floor(decimals)) : 0,
+    uri: sanitizeUri(uri),
   };
 }
 
@@ -326,8 +382,8 @@ async function runWithConcurrency(items, concurrency, workerFn) {
   await Promise.all(workers);
 }
 
-async function applyMetadata(mint, symbol, decimals) {
-  const params = [mint, symbol || "", decimals || 0];
+async function applyMetadata(mint, symbol, decimals, uri) {
+  const params = [mint, symbol || "", decimals || 0, uri || ""];
 
   const poolA = await db.query(updatePoolTokenASql, params);
   const poolB = await db.query(updatePoolTokenBSql, params);
@@ -362,7 +418,7 @@ async function main() {
 
     if (processed % 25 === 0 || processed === mints.length) {
       const resolved = Array.from(metadataByMint.values()).filter(
-        (item) => item.symbol || item.decimals > 0,
+        (item) => item.symbol || item.decimals > 0 || item.uri,
       ).length;
       console.error(
         `[metadata-backfill] progress ${processed}/${mints.length} resolved=${resolved}`,
@@ -371,7 +427,7 @@ async function main() {
   });
 
   const resolvedEntries = Array.from(metadataByMint.values()).filter(
-    (item) => item.symbol || item.decimals > 0,
+    (item) => item.symbol || item.decimals > 0 || item.uri,
   );
 
   if (DRY_RUN) {
@@ -389,7 +445,7 @@ async function main() {
   await db.query("begin");
   try {
     for (const entry of resolvedEntries) {
-      updatedRows += await applyMetadata(entry.mint, entry.symbol, entry.decimals);
+      updatedRows += await applyMetadata(entry.mint, entry.symbol, entry.decimals, entry.uri);
     }
     await db.query("commit");
   } catch (error) {
